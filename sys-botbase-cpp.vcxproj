@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{4E364E00-890B-2D08-7A69-155EDFB20B61}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <NMakeBuildCommandLine>make -j64</NMakeBuildCommandLine>
+    <NMakeCleanCommandLine>make clean</NMakeCleanCommandLine>
+    <NMakeReBuildCommandLine>make clean all -j64</NMakeReBuildCommandLine>
+    <NMakePreprocessorDefinitions>$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>
+    <ExternalIncludePath>C:\devkitPro\devkitA64\include;C:\devkitPro\libnx\include;C:\devkitPro\devkitA64\aarch64-none-elf\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <NMakeIncludeSearchPath>$(IncludePath);$(ProjectDir)\include</NMakeIncludeSearchPath>
+    <IncludePath>$(ProjectDir)\include;$(IncludePath)</IncludePath>
+    <AdditionalOptions>/external:anglebrackets /external:W0</AdditionalOptions>
+    <SourcePath>$(ProjectDir)\source;$(SourcePath)</SourcePath>
+    <NMakeOutput>
+    </NMakeOutput>
+    <OutDir>$(ProjectDir)\</OutDir>
+    <IntDir>$(ProjectDir)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <NMakeCompile>
+      <NMakeCompileFileCommandLine>
+      </NMakeCompileFileCommandLine>
+    </NMakeCompile>
+    <BuildLog>
+      <Path>$(ProjectDir)logs\$(ProjectName).log</Path>
+    </BuildLog>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <Text Include="Makefile">
+      <FileType>Makefile</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\commandHandler.h" />
+    <ClInclude Include="include\connection.h" />
+    <ClInclude Include="include\controllerCommands.h" />
+    <ClInclude Include="include\defines.h" />
+    <ClInclude Include="include\lockFreeQueue.h" />
+    <ClInclude Include="include\logger.h" />
+    <ClInclude Include="include\memoryCommands.h" />
+    <ClInclude Include="include\moduleBase.h" />
+    <ClInclude Include="include\ntp.h" />
+    <ClInclude Include="include\socketConnection.h" />
+    <ClInclude Include="include\usbConnection.h" />
+    <ClInclude Include="include\util.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="source\commandHandler.cpp" />
+    <ClCompile Include="source\controllerCommands.cpp" />
+    <ClCompile Include="source\main.cpp" />
+    <ClCompile Include="source\memoryCommands.cpp" />
+    <ClCompile Include="source\moduleBase.cpp" />
+    <ClCompile Include="source\socketConnection.cpp" />
+    <ClCompile Include="source\usbConnection.cpp" />
+    <ClCompile Include="source\util.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
