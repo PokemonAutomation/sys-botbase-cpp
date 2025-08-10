@@ -14,12 +14,12 @@ New structure should make the sys-module easier to maintain and extend, as well 
 - Send fast, asynchronous, tick-precise controller commands
 
 Commands:
-- `cqControllerState {hex-encoded controller command struct}`: Set controller state. The command struct is a hex-encoded `ControllerCommand` struct. See `include/controllerCommands.h` for details.
+- `cqControllerState {hex-encoded controller command struct}`: Enqueues the specified controller state into the schedule queue. The command struct is a hex-encoded `ControllerCommand` struct. See [`include/controllerCommands.h`](include/controllerCommands.h#L59) for details.
+- `cqCancel`: Cancel all pending controller commands and set the controller state back to neutral.
 - `cqReplaceOnNext`: Declare that the next command should atomically replace the entire command schedule.\
 This differs from `cqCancel + cqControllerState` in that the transition from the current schedule to the new command happens without returning the controller to the neutral state. Meaning if button `A` is being held down by the existing command schedule and is replaced with a new command that also holds `A`, the button `A` will be held throughout and never released.\
 \
 Example usecase: SV sandwich making. If the current schedule is holding `A` to hold an ingredient and it needs to change directions, a `cqReplaceOnNext + new command` can be used to replace the path with the new path without ever releasing `A` as doing so will drop the ingredient.
-- `cqCancel`: Cancel all pending controller commands and set the controller state to neutral.
 
 ### Remote Control:
 - Set controller state
