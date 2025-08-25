@@ -14,24 +14,11 @@ namespace ModuleBase {
      * @return true if attach succeeded, false otherwise.
      */
     bool BaseCommands::attach() {
-        u64 pid = 0;
-        Result rc = pmdmntGetApplicationProcessId(&pid);
+        Logger::instance().log("attach() Attaching to pid=" + std::to_string(m_metaData.pid) + ".");
+        Result rc = svcDebugActiveProcess(&m_debugHandle, m_metaData.pid);
         if (R_FAILED(rc)) {
-            Logger::instance().log("attach() pmdmntGetApplicationProcessId() failed.", std::to_string(R_DESCRIPTION(rc)));
-            return false;
-        }
-
-        if (m_metaData.pid != pid) {
-            Logger::instance().log("attach() m_metaData.pid != pid, calling initMetaData().");
-            m_metaData.pid = pid;
-            initMetaData();
-        } else {
+            Logger::instance().log("attach() svcDebugActiveProcess() failed: pid=" + std::to_string(m_metaData.pid), std::to_string(R_DESCRIPTION(rc)));
             detach();
-        }
-
-        rc = svcDebugActiveProcess(&m_debugHandle, pid);
-        if (R_FAILED(rc)) {
-            Logger::instance().log("attach() svcDebugActiveProcess() failed.", std::to_string(R_DESCRIPTION(rc)));
             return false;
         }
 
@@ -53,7 +40,6 @@ namespace ModuleBase {
     void BaseCommands::initMetaData() {
         if (!attach()) {
             Logger::instance().log("initMetaData() attach() failed.");
-            detach();
             return;
         }
 
@@ -63,9 +49,8 @@ namespace ModuleBase {
         m_metaData.titleVersion = GetTitleVersion();
         m_metaData.buildID = getBuildID();
 
-        detach();
         if (metaHasZeroValue(m_metaData)) {
-            Logger::instance().log("initMetaData() MetaData had one or more zero value.");
+            Logger::instance().log("initMetaData() One or more metadata values are zero.");
         }
     }
 
@@ -116,6 +101,7 @@ namespace ModuleBase {
     u64 BaseCommands::getHeapBase() {
         u64 heap_base = 0;
         Result rc = svcGetInfo(&heap_base, InfoType_HeapRegionAddress, m_debugHandle, 0);
+        detach();
         if (R_FAILED(rc)) {
             Logger::instance().log("getHeapBase() svcGetInfo() failed.", std::to_string(R_DESCRIPTION(rc)));
             return 0;
@@ -182,7 +168,6 @@ namespace ModuleBase {
         }
 
         std::vector<NsApplicationControlData> buf(1);
-        initMetaData();
         rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, m_metaData.titleID, buf.data(), sizeof(NsApplicationControlData), &out);
         nsExit();
         if (R_FAILED(rc)) {
@@ -441,7 +426,7 @@ namespace ModuleBase {
 
     /**
      * @brief Get the current Switch time.
-     * @param[out] buffer Output buffer for time value.
+     * @param[out] Output buffer for time value.
      */
     void BaseCommands::getSwitchTime(std::vector<char>& buffer) {
         time_t posix = 0;
@@ -506,7 +491,7 @@ namespace ModuleBase {
 
     /**
      * @brief Reset the Switch time using NTP if available.
-     * @param[out] buffer Output buffer indicating success.
+     * @param[out] Output buffer indicating success.
      */
     void BaseCommands::resetSwitchTime(std::vector<char>& buffer) {
         bool success = false;

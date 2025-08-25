@@ -24,7 +24,29 @@ namespace CommandHandler {
 			return buffer;
 		}
 
-		Logger::instance().log("HandleCommand cmd: " + cmd + ". Params#: " + std::to_string(params.size()));
+		std::string log = "HandleCommand cmd: " + cmd;
+		if (!params.empty()) {
+			log += ". Parameters: ";
+			for (size_t i = 0; i < params.size(); ++i) {
+				log += "[" + std::to_string(i) + "]: " + params[i];
+				if (i < params.size() - 1) {
+					log += ", ";
+				}
+			}
+        }
+
+        Logger::instance().log(log);
+		u64 pid = 0;
+		Result rc = pmdmntGetApplicationProcessId(&pid);
+		if (R_FAILED(rc)) {
+			Logger::instance().log("initMetaData() pmdmntGetApplicationProcessId() failed: pid=" + std::to_string(pid), std::to_string(R_DESCRIPTION(rc)));
+		}
+
+		if (m_metaData.pid == 0 || m_metaData.pid != pid) {
+			m_metaData.pid = pid;
+			initMetaData();
+        }
+
 		auto it = Handler::m_cmd.find(cmd);
 		if (it != Handler::m_cmd.end()) {
 			it->second(params, buffer);

@@ -172,8 +172,6 @@ namespace SocketConnection {
 			return false;
         }
 
-		m_handler->HandleCommand("click", std::vector<std::string> { "UNUSED" });
-		m_handler->HandleCommand("detachController", {});
 		Logger::instance().log("Client connected.");
 		return true;
 	}
