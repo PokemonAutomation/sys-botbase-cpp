@@ -14,7 +14,6 @@ namespace ModuleBase {
      * @return true if attach succeeded, false otherwise.
      */
     bool BaseCommands::attach() {
-        Logger::instance().log("attach() Attaching to pid=" + std::to_string(m_metaData.pid) + ".");
         Result rc = svcDebugActiveProcess(&m_debugHandle, m_metaData.pid);
         if (R_FAILED(rc)) {
             Logger::instance().log("attach() svcDebugActiveProcess() failed: pid=" + std::to_string(m_metaData.pid), std::to_string(R_DESCRIPTION(rc)));
@@ -460,6 +459,10 @@ namespace ModuleBase {
         std::copy(reinterpret_cast<const char*>(&posix),
             reinterpret_cast<const char*>(&posix) + sizeof(time_t),
             buffer.begin());
+
+        if (g_enableBackwardsCompat && !Utils::isUSB()) {
+            Utils::hexify(buffer);
+        }
     }
 
     /**
@@ -487,6 +490,10 @@ namespace ModuleBase {
         std::copy(reinterpret_cast<const char*>(&success),
             reinterpret_cast<const char*>(&success) + sizeof(bool),
             buffer.begin());
+
+        if (g_enableBackwardsCompat && !Utils::isUSB()) {
+            Utils::hexify(buffer);
+        }
     }
 
     /**
@@ -524,6 +531,10 @@ namespace ModuleBase {
         std::copy(reinterpret_cast<const char*>(&success),
             reinterpret_cast<const char*>(&success) + sizeof(bool),
             buffer.begin());
+
+        if (g_enableBackwardsCompat && !Utils::isUSB()) {
+            Utils::hexify(buffer);
+        }
     }
 
     /**
