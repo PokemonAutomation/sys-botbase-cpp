@@ -1,7 +1,7 @@
 # sys-botbase-C++
 A Nintendo Switch (CFW) sys-module that allows users to remote control their Switch via local WiFi or USB, as well as read and write to a game's memory. This can be used to create bots for games and other fun automation projects.
 
-This is a C++ rewrite of the original sys-botbase and usb-botbase with support for ACNH removed, tick-precise [Pokémon Automation's controller commands added](https://github.com/PokemonAutomation/ComputerControl), and reduced heap use.
+This is a C++ rewrite of the original [sys-botbase](https://github.com/olliz0r/sys-botbase) and [usb-botbase](https://github.com/Koi-3088/usb-botbase) with support for ACNH removed, tick-precise [Pokémon Automation's controller commands added](https://github.com/PokemonAutomation/ComputerControl), and reduced heap use.
 
 It is designed to be backwards compatible with existing SysBot.NET implementations, though backwards compatibility can be disabled by sending `configure enableBackwardsCompat 0` or by setting `g_enableBackwardsCompat` in source and building the project.
 
@@ -58,6 +58,7 @@ This project was created for the purpose of development for bot automation. The 
 4. Open the `.sln` with Visual Studio 2022 and build the solution. Alternatively, can run `MSys2`, `cd` to the cloned repository, and `make` (can optionally append ` -j$(nproc)`) to build the project.
 
 ## Credits
+- Thank you to olliz0r and berichan for their work on the original [sys-botbase](https://github.com/olliz0r/sys-botbase) this repository is based on.
 - Big thank you to [jakibaki](https://github.com/jakibaki/sys-netcheat) for a great sys-module base to learn and work with, as well as being helpful on the ReSwitched Discord!
 - Thanks to RTNX on Discord for bringing to my attention a nasty little bug that would very randomly cause RAM poking to go bad and the switch (sometimes) crashing as a result.
 - Thanks to Anubis for stress testing!
