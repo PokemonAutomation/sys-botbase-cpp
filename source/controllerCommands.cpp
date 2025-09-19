@@ -25,9 +25,16 @@ namespace ControllerCommands {
         }
 
         if (!m_workMem) {
-            m_workMem = (u8*)aligned_alloc(0x1000, m_workMem_size);
-            if (!m_workMem) {
-                Logger::instance().log("Failed to initialize virtual controller.", "initController() aligned_alloc() failed.");
+            try {
+                m_workMem = (u8*)aligned_alloc(0x1000, m_workMem_size);
+                if (!m_workMem) {
+                    Logger::instance().log("Failed to initialize virtual controller.", "initController() aligned_alloc() failed.");
+                    hiddbgExit();
+                    return;
+                }
+            } catch (...) {
+                Logger::instance().log("Exception during m_workMem allocation.");
+                hiddbgExit();
                 return;
             }
         }
@@ -225,14 +232,30 @@ namespace ControllerCommands {
      * @param Condition variable for the sender queue.
      * @param Atomic boolean for error handling, passed from the command thread.
      */
-    void Controller::startControllerThread(LockFreeQueue<std::vector<char>>& senderQueue, std::condition_variable& senderCv, std::atomic_bool& error) {
+    void Controller::startControllerThread(LockFreeQueue<std::vector<char>>& senderQueue, std::condition_variable& senderCv, std::atomic_bool& stop, std::atomic_bool& error) {
         if (m_ccThreadRunning) {
             Logger::instance().log("Controller thread already running.");
             return;
         }
 
         Logger::instance().log("Starting commandLoopPA thread.");
-        m_ccThread = std::thread(&Controller::commandLoopPA, this, std::ref(senderQueue), std::ref(senderCv), std::ref(error));
+        try {
+            m_ccThread = std::thread(&Controller::commandLoopPA, this, std::ref(senderQueue), std::ref(senderCv), std::ref(stop), std::ref(error));
+            m_ccThreadRunning = true;
+            Logger::instance().log("commandLoopPA thread created successfully.");
+        } catch (const std::exception& e) {
+            Logger::instance().log("Failed to create commandLoopPA thread: ", e.what());
+            m_ccThreadRunning = false;
+            stop = true;
+            error = true;
+            throw;
+        } catch (...) {
+            Logger::instance().log("Unknown exception creating commandLoopPA thread.");
+            m_ccThreadRunning = false;
+            stop = true;
+            error = true;
+            throw;
+        }
     }
 
     /**
@@ -241,14 +264,13 @@ namespace ControllerCommands {
      * @param Condition variable for the sender queue.
      * @param Atomic boolean for error handling, passed from the command thread.
      */
-    void Controller::commandLoopPA(LockFreeQueue<std::vector<char>>& senderQueue, std::condition_variable& senderCv, std::atomic_bool& error) {
+    void Controller::commandLoopPA(LockFreeQueue<std::vector<char>>& senderQueue, std::condition_variable& senderCv, std::atomic_bool& stop, std::atomic_bool& error) {
         const std::chrono::microseconds earlyWake(1000);
         m_nextStateChange = WallClock::max();
-        m_ccThreadRunning = true;
         Logger::instance().log("commandLoopPA() started.");
 
         std::unique_lock<std::mutex> lock(m_ccMutex);
-        while (!error) {
+        while (!stop) {
             WallClock now = std::chrono::steady_clock::now();
             ControllerCommand cmd;
             if (now >= m_nextStateChange) {
@@ -270,17 +292,29 @@ namespace ControllerCommands {
             if (m_ccCurrentCommand.seqnum != 0){
                 Logger::instance().log("cqSendState() command finished with seqnum: " + std::to_string(m_ccCurrentCommand.seqnum));
                 std::string res = "cqCommandFinished " + std::to_string(m_ccCurrentCommand.seqnum) + "\r\n";
-                senderQueue.push(std::vector<char>(res.begin(), res.end()));
-                senderCv.notify_one();
+                if (!senderQueue.full()) {
+                    senderQueue.push(std::vector<char>(res.begin(), res.end()));
+                    senderCv.notify_one();
+                } else {
+                    Logger::instance().log("Sender queue full, dropping command finished message.");
+                }
             }
 
             m_ccCurrentCommand = cmd;
-            m_ccCv.wait_until(lock, m_nextStateChange - earlyWake, [&] { return error || now + earlyWake >= m_nextStateChange; });
+            m_ccCv.wait_until(lock, m_nextStateChange - earlyWake, [&] { return stop || error || now + earlyWake >= m_nextStateChange; });
+            if (error) {
+                m_ccQueue.clear();
+                cqControllerState(ControllerCommand{});
+                m_nextStateChange = WallClock::max();
+            }
         }
 
         m_ccQueue.clear();
         cqControllerState(ControllerCommand{});
         detachController();
+        m_ccThreadRunning = false;
+        m_isEnabledPA = false;
+        stop = true;
         Logger::instance().log("commandLoopPA() exiting thread...");
     }
 
@@ -290,7 +324,15 @@ namespace ControllerCommands {
      */
     void Controller::cqControllerState(const ControllerCommand& cmd) {
         Logger::instance().log("cqControllerState() called with seqnum: " + std::to_string(cmd.seqnum));
-        initController();
+        try {
+            initController();
+        } catch (const std::exception& e) {
+            Logger::instance().log("cqControllerState() initController() failed: ", e.what());
+            return;
+        } catch (...) {
+            Logger::instance().log("cqControllerState() initController() unknown exception.");
+            return;
+        }
 
         m_hiddbgHdlsState.buttons = cmd.state.buttons;
         m_hiddbgHdlsState.analog_stick_l.x = cmd.state.left_joystick_x;
@@ -362,11 +404,8 @@ namespace ControllerCommands {
      * @brief Join the PA controller thread if it is running.
      */
     void Controller::cqJoinThread() {
-        if (m_ccThreadRunning && m_ccThread.joinable()) {
-            m_ccThread.join();
-            m_ccThreadRunning = false;
-            Logger::instance().log("commandLoopPA thread finished.");
-        }
+        m_ccCv.notify_all();
+        if (m_ccThread.joinable()) m_ccThread.join();
     }
 
     /**

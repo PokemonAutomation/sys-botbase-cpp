@@ -38,11 +38,7 @@ namespace CommandHandler {
         Logger::instance().log(log);
 		u64 pid = 0;
 		Result rc = pmdmntGetApplicationProcessId(&pid);
-		if (R_FAILED(rc)) {
-			Logger::instance().log("initMetaData() pmdmntGetApplicationProcessId() failed: pid=" + std::to_string(pid), std::to_string(R_DESCRIPTION(rc)));
-		}
-
-		if (m_metaData.pid == 0 || m_metaData.pid != pid) {
+		if (R_SUCCEEDED(rc) && (m_metaData.pid == 0 || m_metaData.pid != pid)) {
 			m_metaData.pid = pid;
 			initMetaData();
         }

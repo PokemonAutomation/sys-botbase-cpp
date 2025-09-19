@@ -75,7 +75,11 @@ namespace CommandHandler {
 #pragma endregion Command registration.
 		};
 
-		~Handler() override {}
+		~Handler() override {
+            m_cmd.clear();
+            cqNotifyAll();
+			cqJoinThread();
+        };
 
 	public:
 		std::vector<char> HandleCommand(const std::string& cmd, const std::vector<std::string>& params);

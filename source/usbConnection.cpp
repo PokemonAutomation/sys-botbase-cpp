@@ -17,112 +17,166 @@ namespace UsbConnection {
     }
 
 	bool UsbConnection::connect() {
+        initializeThreads();
         return true;
 	}
 
-    void UsbConnection::run() {
-        m_error = false;
-        Logger::instance().log("Connected...");
-        Utils::flashLed();
-
-        m_senderThread = std::thread([&]() {
-            while (!m_error) {
-                try {
-                    std::vector<char> buffer;
-                    while (m_senderQueue.pop(buffer) && !m_error) {
-                        int sent = sendData(buffer.data(), buffer.size());
-                        if (sent <= 0) {
-                            Logger::instance().log("sendData() failed or client disconnected.");
-                            m_error = true;
-                            notifyAll();
-                            break;
-                        }
-                    }
-
-                    std::unique_lock<std::mutex> lock(m_senderMutex);
-                    m_senderCv.wait(lock, [&]() { return !m_senderQueue.empty() || m_error; });
-                } catch (const std::exception& e) {
-                    Logger::instance().log("Sender thread exception.", e.what());
-                    m_error = true;
-                    notifyAll();
-                } catch (...) {
-                    Logger::instance().log("Unknown sender thread exception.", "Unknown error.");
-                    m_error = true;
-                    notifyAll();
-                }
-            }
-
-            Logger::instance().log("Socket sender thread exiting.");
-        });
-
-        m_commandThread = std::thread([&]() {
-            while (!m_error) {
-                try {
-                    std::string command;
-                    while (m_commandQueue.pop(command) && !m_error) {
-                        Utils::parseArgs(command, [&](const std::string& x, const std::vector<std::string>& y) {
-                            auto buffer = m_handler->HandleCommand(x, y);
-                            if (!m_handler->getIsRunningPA() && m_handler->getIsEnabledPA()) {
-                                m_handler->startControllerThread(m_senderQueue, m_senderCv, m_error);
-                            }
-
-                            if (!buffer.empty()) {
-                                if (!g_enableBackwardsCompat && buffer.back() != '\n') {
-                                    buffer.push_back('\n');
-                                }
-
-                                Logger::instance().log("Command processed: " + x + ".");
-                                m_senderQueue.push(std::move(buffer));
-                                m_senderCv.notify_one();
-                            }
-                        });
-                    }
-
-                    std::unique_lock<std::mutex> lock(m_commandMutex);
-                    m_commandCv.wait(lock, [&]() { return !m_commandQueue.empty() || m_error; });
-                } catch (const std::exception& e) {
-                    Logger::instance().log("Command thread exception: ", e.what());
-                    m_error = true;
-                    notifyAll();
-                    break;
-                } catch (...) {
-                    Logger::instance().log("Unknown command thread exception.", "Unknown error.");
-                    m_error = true;
-                    notifyAll();
-                    break;
-                }
-            }
-
-            Logger::instance().log("Command thread exiting.");
-        });
-
-        while (!m_error) {
-            try {
-                if (receiveData() < 0) {
-                    m_error = true;
-                    break;
-                }
-            } catch (const std::exception& e) {
-                Logger::instance().log("USB reader exception.", e.what());
-                m_error = true;
-                notifyAll();
-            } catch (...) {
-                Logger::instance().log("Unknown USB reader exception.", "Unknown error.");
-                m_error = true;
-                notifyAll();
-            }
+    void UsbConnection::initializeThreads() {
+        if (getThreadsInitialized()) {
+            return;
         }
 
-        Logger::instance().log("Main USB thread exiting.");
+        Utils::flashLed();
+        Logger::instance().log("Initializing USB threads...");
+        try {
+            m_senderThread = std::thread([&]() {
+                Logger::instance().log("Sender thread starting...");
+                m_senderInitialized = true;
+                while (!m_stop) {
+                    try {
+                        std::vector<char> buffer;
+                        while (m_senderQueue.pop(buffer) && !m_error) {
+                            if (sendData(buffer.data(), buffer.size()) <= 0) {
+                                Logger::instance().log("sendData() failed or client disconnected.");
+                                m_senderQueue.clear();
+                                break;
+                            }
+                        }
+
+                        std::unique_lock<std::mutex> lock(m_senderMutex);
+                        m_senderCv.wait(lock, [&]() { return !m_senderQueue.empty() || m_error || m_stop; });
+                        if (m_error || m_stop) {
+                            m_senderQueue.clear();
+                        }
+                    } catch (const std::exception& e) {
+                        Logger::instance().log("USB sender thread exception.", e.what());
+                        break;
+                    } catch (...) {
+                        Logger::instance().log("Unknown USB sender thread exception.", "Unknown error.");
+                        break;
+                    }
+                }
+
+                Logger::instance().log("USB sender thread exiting.");
+                stopThreads();
+            });
+
+            m_commandThread = std::thread([&]() {
+                Logger::instance().log("USB command thread starting...");
+                m_commandInitialized = true;
+                while (!m_stop) {
+                    try {
+                        std::string command;
+                        while (m_commandQueue.pop(command) && !m_error) {
+                            Utils::parseArgs(command, [&](const std::string& x, const std::vector<std::string>& y) {
+                                auto buffer = m_handler->HandleCommand(x, y);
+                                if (!m_handler->getIsRunningPA() && m_handler->getIsEnabledPA()) {
+                                    m_handler->startControllerThread(m_senderQueue, m_senderCv, m_stop, m_error);
+                                }
+
+                                if (!buffer.empty()) {
+                                    if (!g_enableBackwardsCompat && buffer.back() != '\n') {
+                                        buffer.push_back('\n');
+                                    }
+
+                                    Logger::instance().log("Command processed: " + x + ".");
+                                    if (m_senderQueue.full()) {
+                                        Logger::instance().log("Sender queue full, dropping response.");
+                                        return;
+                                    }
+
+                                    m_senderQueue.push(std::move(buffer));
+                                    m_senderCv.notify_one();
+                                }
+                            });
+                        }
+
+                        std::unique_lock<std::mutex> lock(m_commandMutex);
+                        m_commandCv.wait(lock, [&]() { return !m_commandQueue.empty() || m_error || m_stop; });
+                        if (m_error || m_stop) {
+                            m_commandQueue.clear();
+                        }
+                    } catch (const std::exception& e) {
+                        Logger::instance().log("USB command thread exception: ", e.what());
+                        break;
+                    } catch (...) {
+                        Logger::instance().log("Unknown USB command thread exception.", "Unknown error.");
+                        break;
+                    }
+                }
+
+                Logger::instance().log("USB command thread exiting.");
+                stopThreads();
+            });
+        } catch (const std::exception& e) {
+            Logger::instance().log("Exception while starting threads: ", e.what());
+            stopThreads();
+        } catch (...) {
+            Logger::instance().log("Unknown exception while starting threads.", "Unknown error.");
+            stopThreads();
+        }
+    }
+
+    void UsbConnection::stopThreads() {
+        if (!getThreadsInitialized()) {
+            return;
+        }
+
+        m_error = true;
+        m_stop = true;
+        notifyAll();
+        if (m_senderThread.joinable()) m_senderThread.join();
+        if (m_commandThread.joinable()) m_commandThread.join();
+        if (m_handler) m_handler->cqJoinThread();
+        m_senderQueue.clear();
+        m_commandQueue.clear();
+        m_error = false;
+        m_stop = false;
+        m_commandInitialized = false;
+        m_senderInitialized = false;
+    }
+
+    void UsbConnection::run() {
+        try {
+            while (!m_error) {
+                try {
+                    if (receiveData() < 0) {
+                        m_error = true;
+                        notifyAll();
+                        break;
+                    }
+                } catch (const std::exception& e) {
+                    Logger::instance().log("USB reader thread exception.", e.what());
+                    m_error = true;
+                    notifyAll();
+                    break;
+                } catch (...) {
+                    Logger::instance().log("Unknown USB reader thread exception.", "Unknown error.");
+                    m_error = true;
+                    notifyAll();
+                    break;
+                }
+            }
+
+            Logger::instance().log("Main USB thread exiting.");
+            m_persistentBuffer.clear();
+        } catch (const std::exception& e) {
+            Logger::instance().log("Exception in USBConnection::run(): ", e.what());
+            m_error = true;
+            notifyAll();
+        } catch (...) {
+            Logger::instance().log("Unknown exception in USBConnection::run()");
+            m_error = true;
+            notifyAll();
+        }
     }
 
 	void UsbConnection::disconnect() {
         Logger::instance().log("Disconnecting USB connection...");
         m_error = true;
         notifyAll();
-
-        if (m_senderThread.joinable()) m_senderThread.join();
-        if (m_commandThread.joinable()) m_commandThread.join();
+        m_senderQueue.clear();
+        m_commandQueue.clear();
         usbCommsExit();
 	}
 

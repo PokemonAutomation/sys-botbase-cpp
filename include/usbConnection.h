@@ -12,6 +12,7 @@ namespace UsbConnection {
 	public:
 		UsbConnection() : ConnectionHandler() {
 			m_error = false;
+			m_stop = false;
 			m_handler = std::make_unique<CommandHandler::Handler>();
 		};
 
@@ -30,6 +31,8 @@ namespace UsbConnection {
 
 	public:
 		Result initialize(Result& res) override;
+        void initializeThreads() override;
+        void stopThreads() override;
 		bool connect() override;
 		void run() override;
 		void disconnect() override;
@@ -43,7 +46,14 @@ namespace UsbConnection {
 			if (m_handler) m_handler->cqNotifyAll();
 		}
 
+		bool getThreadsInitialized() const {
+			return m_senderInitialized.load(std::memory_order_relaxed)
+				&& m_commandInitialized.load(std::memory_order_relaxed);
+		}
+
 		std::string m_persistentBuffer;
+		std::atomic_bool m_senderInitialized { false };
+		std::atomic_bool m_commandInitialized { false };
 
 		std::thread m_senderThread;
 		LocklessQueue::LockFreeQueue<std::vector<char>> m_senderQueue;
@@ -56,6 +66,7 @@ namespace UsbConnection {
 		std::condition_variable m_commandCv;
 
 		std::atomic_bool m_error { false };
+		std::atomic_bool m_stop{ false };
 		std::unique_ptr<CommandHandler::Handler> m_handler;
 
 		struct USBResponse {

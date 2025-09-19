@@ -16,7 +16,6 @@ namespace ControllerCommands {
 	class Controller : protected virtual ModuleBase::BaseCommands {
 	public:
         Controller() : BaseCommands(), m_ccQueue() {
-           m_workMem = (u8*)aligned_alloc(0x1000, m_workMem_size);
            m_controllerHandle = { 0 };
            m_controllerDevice = { 0 };
 		   m_hiddbgHdlsState = { 0 };
@@ -29,12 +28,17 @@ namespace ControllerCommands {
         };
 
 		~Controller() override {
-            std::lock_guard<std::mutex> lock(m_ccMutex);
-            m_isEnabledPA = false;
+			m_isEnabledPA = false;
 			m_ccThreadRunning = false;
-			detachController();
 			m_ccCv.notify_all();
 			if (m_ccThread.joinable()) m_ccThread.join();
+			m_ccQueue.clear();
+			detachController();
+			hiddbgExit();
+			if (m_workMem) {
+				aligned_free(m_workMem);
+				m_workMem = nullptr;
+			}
 		};
 
 	public:
@@ -94,7 +98,7 @@ namespace ControllerCommands {
 		static int parseStringToButton(const std::string& arg);
 		static int parseStringToStick(const std::string& arg);
 
-        void startControllerThread(LockFreeQueue<std::vector<char>>& senderQueue, std::condition_variable& senderCv, std::atomic_bool& error);
+        void startControllerThread(LockFreeQueue<std::vector<char>>& senderQueue, std::condition_variable& senderCv, std::atomic_bool& stop, std::atomic_bool& error);
 		void cqEnqueueCommand(const ControllerCommand& cmd);
 		void cqReplaceOnNext();
 		void cqCancel();
@@ -116,7 +120,7 @@ namespace ControllerCommands {
 		void setControllerType(const std::vector<std::string>& params);
 
 	private:
-		void commandLoopPA(LockFreeQueue<std::vector<char>>& senderQueue, std::condition_variable& senderCv, std::atomic_bool& error);
+		void commandLoopPA(LockFreeQueue<std::vector<char>>& senderQueue, std::condition_variable& senderCv, std::atomic_bool& stop, std::atomic_bool& error);
 		void cqControllerState(const ControllerCommand& cmd);
 
 		inline void* aligned_alloc(size_t alignment, size_t size) {

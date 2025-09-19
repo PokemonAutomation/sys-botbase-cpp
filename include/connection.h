@@ -12,6 +12,8 @@ namespace Connection {
 
 	public:
 		virtual Result initialize(Result& res) = 0;
+        virtual void initializeThreads() = 0;
+        virtual void stopThreads() = 0;
 		virtual bool connect() = 0;
 		virtual void run() = 0;
 		virtual void disconnect() = 0;

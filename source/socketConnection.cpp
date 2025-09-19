@@ -31,12 +31,11 @@ namespace SocketConnection {
 
 		    4, //sb_efficiency
 
-			3, //num_bsd_sessions
-			BsdServiceType::BsdServiceType_Auto,
+			1, //num_bsd_sessions
+			BsdServiceType::BsdServiceType_User,
 		};
 
-		res = socketInitialize(&cfg);
-		return res;
+		return socketInitialize(&cfg);
 	}
 
 	int SocketConnection::setupServerSocket() {
@@ -50,6 +49,7 @@ namespace SocketConnection {
 		if (ioctl(m_tcp.serverFd, FIONBIO, &flags) < 0) {
 			Logger::instance().log("ioctl(FIONBIO) error.", std::to_string(errno));
 			close(m_tcp.serverFd);
+			m_tcp.serverFd = -1;
 			return -1;
 		}
 
@@ -59,6 +59,7 @@ namespace SocketConnection {
 		if (setsockopt(m_tcp.serverFd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger)) < 0) {
 			Logger::instance().log("setsockopt(SO_LINGER) error.", std::to_string(errno));
 			close(m_tcp.serverFd);
+			m_tcp.serverFd = -1;
 			return -1;
         }
 
@@ -66,6 +67,7 @@ namespace SocketConnection {
 		if (setsockopt(m_tcp.serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
 			Logger::instance().log("setsockopt(SO_REUSEADDR) error.", std::to_string(errno));
 			close(m_tcp.serverFd);
+			m_tcp.serverFd = -1;
 			return -1;
 		}
 
@@ -74,6 +76,7 @@ namespace SocketConnection {
 		if (setsockopt(m_tcp.serverFd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
 			Logger::instance().log("setsockopt(SO_REUSEPORT) error.", std::to_string(errno));
 			close(m_tcp.serverFd);
+			m_tcp.serverFd = -1;
 			return -1;
 		}
 #endif
@@ -85,28 +88,42 @@ namespace SocketConnection {
 
 		while (bind(m_tcp.serverFd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
             Logger::instance().log("bind() error, retrying in 50ms...", std::to_string(errno));
-			svcSleepThread(5e+6L);
+			svcSleepThread(1e+6L);
 		}
 
 		if (listen(m_tcp.serverFd, 3) < 0) {
 			Logger::instance().log("listen() error.", std::to_string(errno));
 			close(m_tcp.serverFd);
+			m_tcp.serverFd = -1;
 			return -1;
 		}
 
+		//Logger::instance().log("Server socket created with FD: " + std::to_string(m_tcp.serverFd));
 		return 0;
 	}
 
-	bool SocketConnection::connect() {
-		try {
-			if (m_tcp.serverFd == -1) {
-				if (setupServerSocket() < 0) {
-					return false;
-				}
+	void SocketConnection::closeSocket() {
+		if (m_tcp.clientFd != -1) {
+			close(m_tcp.clientFd);
+			m_tcp.clientFd = -1;
+		}
 
-				Utils::flashLed();
+		if (m_tcp.serverFd != -1) {
+			close(m_tcp.serverFd);
+			m_tcp.serverFd = -1;
+		}
+    }
+
+	bool SocketConnection::connect() {
+		m_error = false;
+        m_stop = false;
+		try {
+			if (setupServerSocket() < 0) {
+				Logger::instance().log("setupServerSocket() failed");
+				return false;
 			}
 
+			initializeThreads();
 			struct sockaddr_in clientAddr {};
 			socklen_t clientSize = sizeof(clientAddr);
 			int eagainCount = 0;
@@ -120,9 +137,7 @@ namespace SocketConnection {
 
 				if (select(m_tcp.serverFd + 1, &readfds, nullptr, nullptr, nullptr) < 0) {
 					Logger::instance().log("select() error.", std::string(strerror(errno)));
-					close(m_tcp.serverFd);
-					m_tcp.serverFd = -1;
-					svcSleepThread(5e+6L);
+					closeSocket();
 					if (setupServerSocket() < 0) {
 						return false;
 					}
@@ -140,23 +155,21 @@ namespace SocketConnection {
 						eagainCount++;
 						if (eagainCount >= maxEagain) {
 							Logger::instance().log("accept() EAGAIN/EWOULDBLOCK repeated, recreating server socket.");
-							close(m_tcp.serverFd);
-							m_tcp.serverFd = -1;
-							svcSleepThread(5e+6L);
+							closeSocket();
 							if (setupServerSocket() < 0) {
 								return false;
 							}
+
+							eagainCount = 0;
 						} else {
-							svcSleepThread(5e+6L);
+							svcSleepThread(1e+6L);
 						}
 
 						continue;
 					}
 
 					Logger::instance().log("accept() error.", std::string(strerror(errno)));
-					close(m_tcp.serverFd);
-					m_tcp.serverFd = -1;
-					svcSleepThread(5e+6L);
+					closeSocket();
 					if (setupServerSocket() < 0) {
 						return false;
 					}
@@ -166,15 +179,132 @@ namespace SocketConnection {
 			}
 		} catch (const std::exception& e) {
             Logger::instance().log("Exception while waiting for client to connect: ", e.what());
+			closeSocket();
 			return false;
 		} catch (...) {
             Logger::instance().log("Unknown exception while waiting for client to connect.", "Unknown error.");
+			closeSocket();
 			return false;
         }
 
-		Logger::instance().log("Client connected.");
+		Logger::instance().log("Client connected. ClientFd: " + std::to_string(m_tcp.clientFd));
 		return true;
 	}
+
+	void SocketConnection::initializeThreads() {
+		if (getThreadsInitialized()) {
+			return;
+		}
+
+		Utils::flashLed();
+        Logger::instance().log("Initializing socket threads...");
+		try {
+			m_senderThread = std::thread([&]() {
+                Logger::instance().log("Sender thread starting...");
+                m_senderInitialized = true;
+				while (!m_stop) {
+					try {
+						std::vector<char> buffer;
+						while (m_senderQueue.pop(buffer) && !m_error) {
+							if (sendData(buffer.data(), buffer.size(), m_tcp.clientFd) <= 0) {
+								Logger::instance().log("sendData() failed or client disconnected.");
+								m_senderQueue.clear();
+								break;
+							}
+						}
+
+						std::unique_lock<std::mutex> lock(m_senderMutex);
+						m_senderCv.wait(lock, [&]() { return !m_senderQueue.empty() || m_error || m_stop; });
+						if (m_error || m_stop) {
+							m_senderQueue.clear();
+						}
+					} catch (const std::exception& e) {
+						Logger::instance().log("Sender thread exception.", e.what());
+						break;
+					} catch (...) {
+						Logger::instance().log("Unknown sender thread exception.", "Unknown error.");
+						break;
+					}
+				}
+
+				Logger::instance().log("Socket sender thread exiting.");
+				stopThreads();
+			});
+
+			m_commandThread = std::thread([&]() {
+                Logger::instance().log("Command thread starting...");
+                m_commandInitialized = true;
+				while (!m_stop) {
+					try {
+						std::string command;
+						while (m_commandQueue.pop(command) && !m_error) {
+							Utils::parseArgs(command, [&](const std::string& x, const std::vector<std::string>& y) {
+								auto buffer = m_handler->HandleCommand(x, y);
+								if (!m_handler->getIsRunningPA() && m_handler->getIsEnabledPA()) {
+									m_handler->startControllerThread(m_senderQueue, m_senderCv, m_stop, m_error);
+								}
+
+								if (!buffer.empty()) {
+									if (buffer.back() != '\n') {
+										buffer.push_back('\n');
+									}
+
+									Logger::instance().log("Command processed: " + x + ".");
+									if (m_senderQueue.full()) {
+										Logger::instance().log("Sender queue full, dropping response.");
+										return;
+									}
+
+									m_senderQueue.push(std::move(buffer));
+									m_senderCv.notify_one();
+								}
+							});
+						}
+
+						std::unique_lock<std::mutex> lock(m_commandMutex);
+						m_commandCv.wait(lock, [&]() { return !m_commandQueue.empty() || m_error || m_stop; });
+						if (m_error || m_stop) {
+							m_commandQueue.clear();
+						}
+					} catch (const std::exception& e) {
+						Logger::instance().log("Command thread exception: ", e.what());
+						break;
+					} catch (...) {
+						Logger::instance().log("Unknown command thread exception.", "Unknown error.");
+						break;
+					}
+				}
+
+				Logger::instance().log("Command thread exiting.");
+				stopThreads();
+			});
+		} catch (const std::exception& e) {
+			Logger::instance().log("Exception while starting threads: ", e.what());
+            stopThreads();
+		} catch (...) {
+			Logger::instance().log("Unknown exception while starting threads.", "Unknown error.");
+            stopThreads();
+        }
+    }
+
+	void SocketConnection::stopThreads() {
+        if (!getThreadsInitialized()) {
+			return;
+        }
+
+        m_error = true;
+		m_stop = true;
+		notifyAll();
+		if (m_senderThread.joinable()) m_senderThread.join();
+		if (m_commandThread.joinable()) m_commandThread.join();
+		if (m_handler) m_handler->cqJoinThread();
+		m_senderQueue.clear();
+		m_commandQueue.clear();
+		m_error = false;
+        m_stop = false;
+		m_commandInitialized = false;
+        m_senderInitialized = false;
+    }
 
 	void SocketConnection::disconnect() {
 		if (m_tcp.clientFd == -1 && m_tcp.serverFd == -1) {
@@ -182,113 +312,46 @@ namespace SocketConnection {
         }
 
 		Logger::instance().log("Disconnecting WiFi connection...");
-		close(m_tcp.serverFd);
-		m_tcp.serverFd = -1;
-		close(m_tcp.clientFd);
-		m_tcp.clientFd = -1;
-
-		if (m_senderThread.joinable()) m_senderThread.join();
-		if (m_commandThread.joinable()) m_commandThread.join();
-		if (m_handler) m_handler->cqJoinThread();
+		closeSocket();
+		m_error = true;
+		notifyAll();
+		m_senderQueue.clear();
+		m_commandQueue.clear();
 	}
 
 	void SocketConnection::run() {
-		m_senderThread = std::thread([&]() {
+		try {
 			while (!m_error) {
 				try {
-					std::vector<char> buffer;
-					while (m_senderQueue.pop(buffer) && !m_error) {
-						int sent = sendData(buffer.data(), buffer.size(), m_tcp.clientFd);
-						if (sent <= 0) {
-							Logger::instance().log("sendData() failed or client disconnected.");
-							m_error = true;
-							notifyAll();
-							break;
-						}
+					if (receiveData(m_tcp.clientFd) < 0) {
+						m_error = true;
+						notifyAll();
+						break;
 					}
-
-					std::unique_lock<std::mutex> lock(m_senderMutex);
-					m_senderCv.wait(lock, [&]() { return !m_senderQueue.empty() || m_error; });
 				} catch (const std::exception& e) {
-					Logger::instance().log("Sender thread exception.", e.what());
+					Logger::instance().log("Socket reader thread exception.", e.what());
 					m_error = true;
 					notifyAll();
 					break;
 				} catch (...) {
-					Logger::instance().log("Unknown sender thread exception.", "Unknown error.");
+					Logger::instance().log("Unknown socket reader thread exception.", "Unknown error.");
 					m_error = true;
 					notifyAll();
 					break;
 				}
 			}
 
-            Logger::instance().log("Socket sender thread exiting.");
-		});
-
-		m_commandThread = std::thread([&]() {
-			while (!m_error) {
-				try {
-					std::string command;
-					while (m_commandQueue.pop(command) && !m_error) {
-						Utils::parseArgs(command, [&](const std::string& x, const std::vector<std::string>& y) {
-							auto buffer = m_handler->HandleCommand(x, y);
-							if (!m_handler->getIsRunningPA() && m_handler->getIsEnabledPA()) {
-								m_handler->startControllerThread(m_senderQueue, m_senderCv, m_error);
-							}
-
-							if (!buffer.empty()) {
-								if (buffer.back() != '\n') {
-									buffer.push_back('\n');
-								}
-
-                                Logger::instance().log("Command processed: " + x + ".");
-								m_senderQueue.push(std::move(buffer));
-								m_senderCv.notify_one();
-							}
-					    });
-					}
-
-					std::unique_lock<std::mutex> lock(m_commandMutex);
-					m_commandCv.wait(lock, [&]() { return !m_commandQueue.empty() || m_error; });
-				} catch (const std::exception& e) {
-					Logger::instance().log("Command thread exception: ", e.what());
-					m_error = true;
-					notifyAll();
-					break;
-				} catch (...) {
-					Logger::instance().log("Unknown command thread exception.", "Unknown error.");
-					m_error = true;
-					notifyAll();
-					break;
-				}
-			}
-
-            Logger::instance().log("Command thread exiting.");
+			Logger::instance().log("Main socket thread exiting.");
+			m_persistentBuffer.clear();
+		} catch (const std::exception& e) {
+			Logger::instance().log("Exception in SocketConnection::run(): ", e.what());
 			m_error = true;
 			notifyAll();
-        });
-
-		while (!m_error) {
-			try {
-				if (receiveData(m_tcp.clientFd) < 0) {
-                    m_error = true;
-					notifyAll();
-					break;
-				}
-			} catch (const std::exception& e) {
-				Logger::instance().log("Socket reader thread exception.", e.what());
-				m_error = true;
-				notifyAll();
-				break;
-			} catch (...) {
-				Logger::instance().log("Unknown socket reader thread exception.", "Unknown error.");
-				m_error = true;
-				notifyAll();
-				break;
-			}
+		} catch (...) {
+			Logger::instance().log("Unknown exception in SocketConnection::run()");
+			m_error = true;
+			notifyAll();
 		}
-
-        Logger::instance().log("Main socket thread exiting.");
 	}
 
 	int SocketConnection::receiveData(int sockfd) {
@@ -298,7 +361,13 @@ namespace SocketConnection {
 		while (!m_error) {
 			ssize_t received = recv(sockfd, buf, bufSize, 0);
 			if (received > 0) {
-				m_persistentBuffer.append(buf, received);
+				try {
+					m_persistentBuffer.append(buf, received);
+				} catch (const std::exception& e) {
+					Logger::instance().log("receiveData(): Failed to append to persistent buffer: ", e.what());
+					m_persistentBuffer.clear();
+					continue;
+				}
 
 				size_t pos;
 				while ((pos = m_persistentBuffer.find("\r\n")) != std::string::npos && !m_error) {
@@ -320,31 +389,43 @@ namespace SocketConnection {
 								std::string response = command + " " + params.front() + "\r\n";
                                 sendData(response.data(), response.size(), sockfd);
 							} else {
-								m_commandQueue.push(std::move(cmd));
-								m_commandCv.notify_one();
+								if (!m_commandQueue.full()) {
+									m_commandQueue.push(std::move(cmd));
+									m_commandCv.notify_one();
+									return;
+								}
+
+								Logger::instance().log("Command queue full, dropping command.");
 							}
 						});
 					} else {
-						m_commandQueue.push(std::move(cmd));
-						m_commandCv.notify_one();
+						if (!m_commandQueue.full()) {
+							m_commandQueue.push(std::move(cmd));
+							m_commandCv.notify_one();
+						} else {
+							Logger::instance().log("Command queue full, dropping command.");
+						}
 					}
 				}
 
+//				Logger::instance().log("Queue sizes - Command: " + std::to_string(m_commandQueue.size()) +
+//					", Sender: " + std::to_string(m_senderQueue.size()));
+
 				continue;
 			} else if (received == 0) {
-				Logger::instance().log("receiveData() client closed the connection.", "", true);
+				Logger::instance().log("receiveData(): client closed the connection.", "", true);
 				m_error = true;
 				notifyAll();
 				return -1;
 			} else if (received == -1 && errno != EWOULDBLOCK && errno != EAGAIN) {
-				Logger::instance().log("receiveData() recv() error.", std::string(strerror(errno)));
+				Logger::instance().log("receiveData(): recv() error.", std::string(strerror(errno)));
 				m_error = true;
 				notifyAll();
 				return -1;
 			}
 
 			if (errno == EWOULDBLOCK || errno == EAGAIN) {
-				svcSleepThread(5e+6L);
+				svcSleepThread(1e+6L);
 			}
 		}
 
@@ -373,7 +454,7 @@ namespace SocketConnection {
 			}
 
 			if (errno == EWOULDBLOCK || errno == EAGAIN) {
-				svcSleepThread(5e+6L);
+				svcSleepThread(1e+6L);
 			}
 		}
 

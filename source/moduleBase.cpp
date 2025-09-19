@@ -51,6 +51,8 @@ namespace ModuleBase {
         if (metaHasZeroValue(m_metaData)) {
             Logger::instance().log("initMetaData() One or more metadata values are zero.");
         }
+
+        detach();
     }
 
     /**
@@ -100,7 +102,6 @@ namespace ModuleBase {
     u64 BaseCommands::getHeapBase() {
         u64 heap_base = 0;
         Result rc = svcGetInfo(&heap_base, InfoType_HeapRegionAddress, m_debugHandle, 0);
-        detach();
         if (R_FAILED(rc)) {
             Logger::instance().log("getHeapBase() svcGetInfo() failed.", std::to_string(R_DESCRIPTION(rc)));
             return 0;

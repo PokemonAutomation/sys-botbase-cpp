@@ -19,6 +19,10 @@ extern "C" {
     TimeServiceType __nx_time_service_type = TimeServiceType_System;
 
     void setUpConnection() {
+        if (m_connection) {
+            return;
+        }
+
         try {
             if (Utils::isUSB()) {
                 m_connection = std::make_unique<UsbConnection::UsbConnection>();
@@ -27,6 +31,10 @@ extern "C" {
             }
         } catch (const std::exception& e) {
             Logger::instance().log("Exception caught while setting up connection.", e.what());
+            m_connection.reset();
+        } catch (...) {
+            Logger::instance().log("Unknown exception caught while setting up connection.");
+            m_connection.reset();
         }
     }
 
@@ -139,18 +147,37 @@ extern "C" {
         while (true) {
             try {
                 Logger::instance().log("Connecting...", "", true);
-                if (m_connection->connect()) {
+                if (m_connection && m_connection->connect()) {
                     m_connection->run();
                     m_connection->disconnect();
+                    svcSleepThread(1e+6L);
                 }
 
                 Logger::instance().log("Resetting connection...", "", true);
-                m_connection.reset();
+            } catch (const std::exception& e) {
+                Logger::instance().log("Standard exception caught in main(): ", e.what());
+                if (m_connection) {
+                    try {
+                        m_connection->disconnect();
+                        m_connection->stopThreads();
+                    } catch (...) {}
+                    m_connection.reset();
+                }
+
+                svcSleepThread(1e+6L);
                 setUpConnection();
             } catch (...) {
-                Result rc = Result { 0x1001 };
-                Logger::instance().log("Exception caught in main().", std::to_string(R_DESCRIPTION(rc)));
-                fatalThrow(rc);
+                Logger::instance().log("Unknown exception caught in main().");
+                if (m_connection) {
+                    try {
+                        m_connection->disconnect();
+                        m_connection->stopThreads();
+                    } catch (...) {}
+                    m_connection.reset();
+                }
+
+                svcSleepThread(1e+6L);
+                setUpConnection();
             }
         }
 

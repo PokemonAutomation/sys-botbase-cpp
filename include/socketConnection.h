@@ -12,25 +12,19 @@ namespace SocketConnection {
 	public:
 		SocketConnection() : ConnectionHandler(), m_tcp(), m_senderQueue(), m_commandQueue() {
 			m_error = false;
+            m_stop = false;
 			m_handler = std::make_unique<CommandHandler::Handler>();
 		};
 
 		~SocketConnection() override {
-			m_error = true;
-			notifyAll();
-
-			m_persistentBuffer.clear();
-			m_senderQueue.clear();
-			m_commandQueue.clear();
-
-			if (m_senderThread.joinable()) m_senderThread.join();
-			if (m_commandThread.joinable()) m_commandThread.join();
-			if (m_handler) m_handler->cqJoinThread();
-			if (m_handler) m_handler.reset();
+            disconnect();
+            stopThreads();
 		};
 
 	public:
 		Result initialize(Result& res) override;
+		void initializeThreads() override;
+		void stopThreads() override;
 		bool connect() override;
 		void run() override;
 		void disconnect() override;
@@ -47,13 +41,21 @@ namespace SocketConnection {
 		TcpConnection m_tcp;
 
 		int setupServerSocket();
+		void closeSocket();
 		void notifyAll() {
 			m_commandCv.notify_all();
             m_senderCv.notify_all();
 			if (m_handler) m_handler->cqNotifyAll();
 		}
 
+		bool getThreadsInitialized() const {
+			return m_senderInitialized.load(std::memory_order_relaxed)
+				   && m_commandInitialized.load(std::memory_order_relaxed);
+        }
+
 		std::string m_persistentBuffer;
+		std::atomic_bool m_senderInitialized { false };
+		std::atomic_bool m_commandInitialized { false };
 
 		std::thread m_senderThread;
 		LocklessQueue::LockFreeQueue<std::vector<char>> m_senderQueue;
@@ -66,6 +68,7 @@ namespace SocketConnection {
 		std::condition_variable m_commandCv;
 
 		std::atomic_bool m_error { false };
+		std::atomic_bool m_stop { false };
 		std::unique_ptr<CommandHandler::Handler> m_handler;
 	};
 }

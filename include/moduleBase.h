@@ -89,7 +89,7 @@ namespace ModuleBase {
 
 	private:
 		static std::string getCurrentSbbVersion() {
-            return !g_enableBackwardsCompat ? "3.0\r\n" : "3.1\r\n";
+            return !g_enableBackwardsCompat ? "3.01\r\n" : "3.11\r\n";
         }
 
         void setButtonClickSleepTime(const std::vector<std::string>& params);

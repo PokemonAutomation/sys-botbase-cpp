@@ -4,7 +4,7 @@
 #include <atomic>
 
 namespace LocklessQueue {
-    template<typename T, size_t Capacity = 128>
+    template<typename T, size_t Capacity = 256>
     class LockFreeQueue {
         static_assert(Capacity > 0, "Capacity must be greater than 0.");
 
@@ -94,6 +94,12 @@ namespace LocklessQueue {
             const Cell& cell = m_buffer[pos % Capacity];
             size_t seq = cell.sequence.load(std::memory_order_acquire);
             return ((intptr_t)seq - (intptr_t)pos) < 0;
+        }
+
+        size_t size() const {
+            size_t enq = m_enqueuePos.load(std::memory_order_acquire);
+            size_t deq = m_dequeuePos.load(std::memory_order_acquire);
+            return enq - deq;
         }
     };
 }
