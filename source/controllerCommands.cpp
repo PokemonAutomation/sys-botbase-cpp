@@ -302,10 +302,12 @@ namespace ControllerCommands {
 
             m_ccCurrentCommand = cmd;
             m_ccCv.wait_until(lock, m_nextStateChange - earlyWake, [&] { return stop || error || now + earlyWake >= m_nextStateChange; });
-            if (error) {
+            if (error && !stop) {
                 m_ccQueue.clear();
                 cqControllerState(ControllerCommand{});
                 m_nextStateChange = WallClock::max();
+                detachController();
+                m_ccCv.wait_until(lock, m_nextStateChange - earlyWake, [&] { return stop || !error; });
             }
         }
 
