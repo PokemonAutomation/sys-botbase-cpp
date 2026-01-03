@@ -125,7 +125,7 @@ postbuild: $(OUTPUT).nsp
 	@cp $(OUTPUT).nsp atmosphere/contents/430000000000000B/exefs.nsp
 	@echo wifi > atmosphere/contents/430000000000000B/config.cfg
 	@touch atmosphere/contents/430000000000000B/flags/boot2.flag
-	@powershell -Command "Compress-Archive -Path 'atmosphere' -DestinationPath 'atmosphere.zip' -Force"
+	@python -c "import shutil; shutil.make_archive('atmosphere', 'zip', '.', 'atmosphere')"
 
 	@mkdir -p artifacts
 	@cp $(OUTPUT).nsp artifacts
