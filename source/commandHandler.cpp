@@ -236,7 +236,7 @@ namespace CommandHandler {
 		}
 
 		if (g_enableBackwardsCompat && !Utils::isUSB()) {
-			Utils::hexify(buffer);
+			Utils::hexifyString(buffer);
 		}
 	}
 
@@ -273,7 +273,7 @@ namespace CommandHandler {
 		}
 
 		if (g_enableBackwardsCompat && !Utils::isUSB()) {
-			Utils::hexify(buffer);
+			Utils::hexifyString(buffer);
 		}
 	}
 
