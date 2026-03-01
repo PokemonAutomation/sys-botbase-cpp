@@ -232,7 +232,7 @@ namespace CommandHandler {
 			val += finalJump;
 			std::memcpy(buffer.data(), &val, sizeof(val));
 		} else {
-			Logger::instance().log("pointerAll_cmd() value is 0, is your pointer chain correct?");
+			Logger::instance().log("pointerAll_cmd() value is 0, is your pointer chain correct?", "PointerAll");
 			buffer.assign(sizeof(u64), 0);
 			return;
 		}
@@ -271,7 +271,7 @@ namespace CommandHandler {
 			val -= m_metaData.heap_base;
 			std::memcpy(buffer.data(), &val, sizeof(val));
 		} else {
-			Logger::instance().log("pointerRelative_cmd() value is 0, is your pointer chain correct?");
+			Logger::instance().log("pointerRelative_cmd() value is 0, is your pointer chain correct?", "PointerRelative");
 			buffer.assign(sizeof(u64), 0);
 			return;
 		}
@@ -309,7 +309,7 @@ namespace CommandHandler {
 
 		u64 val = followMainPointer(mainJump, jumps, buffer);
 		if (val == 0) {
-			Logger::instance().log("pointerPeek_cmd() value is 0, is your pointer chain correct?");
+			Logger::instance().log("pointerPeek_cmd() value is 0, is your pointer chain correct?", "PointerPeek");
 			buffer.assign(sizeof(u64), 0);
 			return;
         }
@@ -372,7 +372,7 @@ namespace CommandHandler {
 
 			u64 val = followMainPointer(mainJump, jumps, buffer);
 			if (val == 0) {
-				Logger::instance().log("pointerPeekMulti_cmd() value is 0, is your pointer chain correct?");
+				Logger::instance().log("pointerPeekMulti_cmd() value is 0, is your pointer chain correct?", "PointerPeekMulti");
 				buffer.assign(sizeof(u64), 0);
 				return;
             }
@@ -415,7 +415,7 @@ namespace CommandHandler {
 		std::vector<char> buffer;
 		u64 val = followMainPointer(mainJump, jumps, buffer);
 		if (val == 0) {
-			Logger::instance().log("pointerPoke_cmd() value is 0, is your pointer chain correct?");
+			Logger::instance().log("pointerPoke_cmd() value is 0, is your pointer chain correct?", "PointerPoke");
 			return;
         }
 
