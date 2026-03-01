@@ -24,7 +24,12 @@ namespace MemoryCommands {
         while (remainder > 0) {
             u64 receive = remainder > MAX_LINE_LENGTH ? MAX_LINE_LENGTH : remainder;
             remainder -= receive;
-            readMem(buffer, offset + total, receive);
+            Result rc = readMem(buffer, offset + total, receive);
+            if (R_FAILED(rc)) {
+                Logger::instance().log("peek() readMem() failed. Offset=" + std::to_string(offset + total) + ", Size=" + std::to_string(receive), std::to_string(R_DESCRIPTION(rc)));
+                buffer.assign(size, 0);
+                break;
+            }
             total += receive;
         }
 
@@ -50,7 +55,12 @@ namespace MemoryCommands {
         buffer.resize(totalSize * sizeof(u8));
         int count = (int)offsets.size();
         for (int i = 0; i < count; i++) {
-            readMem(buffer, offsets[i], sizes[i], ofs);
+            Result rc = readMem(buffer, offsets[i], sizes[i], ofs);
+            if (R_FAILED(rc)) {
+                Logger::instance().log("peekMulti() readMem() failed. Offset=" + std::to_string(offsets[i]) + ", Size=" + std::to_string(sizes[i]), std::to_string(R_DESCRIPTION(rc)));
+                buffer.assign(totalSize * sizeof(u8), 0);
+                break;
+            }
             ofs += sizes[i];
         }
 
@@ -81,12 +91,21 @@ namespace MemoryCommands {
         u64 size = sizeof(u64);
         buffer.resize(size);
 
-        readMem(buffer, m_metaData.main_nso_base + main, size);
-        std::memcpy(&offset, buffer.data(), size);
+        Result rc = readMem(buffer, m_metaData.main_nso_base + main, size);
+        if (R_FAILED(rc)) {
+            Logger::instance().log("followMainPointer() initial readMem() failed. Main=" + std::to_string(main), std::to_string(R_DESCRIPTION(rc)));
+            return 0;
+        }
 
+        std::memcpy(&offset, buffer.data(), size);
         int count = (int)jumps.size();
         for (int i = 0; i < count; i++) {
-            readMem(buffer, offset + jumps[i], size);
+            rc = readMem(buffer, offset + jumps[i], size);
+            if (R_FAILED(rc)) {
+                Logger::instance().log("followMainPointer() readMem() failed. Offset=" + std::to_string(offset) + ", Jump=" + std::to_string(jumps[i]), std::to_string(R_DESCRIPTION(rc)));
+                return 0;
+            }
+
             std::memcpy(&offset, buffer.data(), size);
             if (offset == 0) {
                 break;
@@ -103,13 +122,11 @@ namespace MemoryCommands {
      * @param The number of bytes to read.
      * @param Offset into the buffer for multi-read (default 0).
      */
-    void Vision::readMem(const std::vector<char>& buffer, u64 offset, u64 size, u64 multi) {
+    Result Vision::readMem(const std::vector<char>& buffer, u64 offset, u64 size, u64 multi) {
         attach();
         Result rc = svcReadDebugProcessMemory((void*)(buffer.data() + multi), m_debugHandle, offset, size);
-        if (R_FAILED(rc)) {
-            Logger::instance().log("readMem() svcReadDebugProcessMemory() failed. Offset=" + std::to_string(offset) + ", Size=" + std::to_string(size), std::to_string(R_DESCRIPTION(rc)));
-        }
         detach();
+        return rc;
     }
 
     /**

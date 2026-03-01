@@ -20,7 +20,7 @@ namespace MemoryCommands {
 		void poke(u64 offset, u64 size, const std::vector<char>& buffer);
 
 		u64 followMainPointer(const s64& main, const std::vector<s64>& jumps, std::vector<char>& buffer);
-		void readMem(const std::vector<char>& data, u64 offset, u64 size, u64 multi = 0);
+		Result readMem(const std::vector<char>& data, u64 offset, u64 size, u64 multi = 0);
 		void writeMem(u64 offset, u64 size, const std::vector<char>& buffer);
 	};
 }

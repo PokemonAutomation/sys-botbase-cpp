@@ -232,7 +232,9 @@ namespace CommandHandler {
 			val += finalJump;
 			std::memcpy(buffer.data(), &val, sizeof(val));
 		} else {
-			Logger::instance().log("pointerAll_cmd() val is 0, not adding final jump.");
+			Logger::instance().log("pointerAll_cmd() value is 0, is your pointer chain correct?");
+			buffer.assign(sizeof(u64), 0);
+			return;
 		}
 
 		if (g_enableBackwardsCompat && !Utils::isUSB()) {
@@ -269,7 +271,9 @@ namespace CommandHandler {
 			val -= m_metaData.heap_base;
 			std::memcpy(buffer.data(), &val, sizeof(val));
 		} else {
-			Logger::instance().log("pointerRelative_cmd() val is 0, not adding final jump.");
+			Logger::instance().log("pointerRelative_cmd() value is 0, is your pointer chain correct?");
+			buffer.assign(sizeof(u64), 0);
+			return;
 		}
 
 		if (g_enableBackwardsCompat && !Utils::isUSB()) {
@@ -304,6 +308,12 @@ namespace CommandHandler {
 		}
 
 		u64 val = followMainPointer(mainJump, jumps, buffer);
+		if (val == 0) {
+			Logger::instance().log("pointerPeek_cmd() value is 0, is your pointer chain correct?");
+			buffer.assign(sizeof(u64), 0);
+			return;
+        }
+
 		val += finalJump;
 		std::memcpy(buffer.data(), &val, sizeof(val));
 		peek(val, size, buffer);
@@ -361,8 +371,13 @@ namespace CommandHandler {
 			}
 
 			u64 val = followMainPointer(mainJump, jumps, buffer);
-			val += finalJump;
+			if (val == 0) {
+				Logger::instance().log("pointerPeekMulti_cmd() value is 0, is your pointer chain correct?");
+				buffer.assign(sizeof(u64), 0);
+				return;
+            }
 
+			val += finalJump;
 			offsets.push_back(val);
 			sizes.push_back(size);
 		}
@@ -399,6 +414,11 @@ namespace CommandHandler {
 
 		std::vector<char> buffer;
 		u64 val = followMainPointer(mainJump, jumps, buffer);
+		if (val == 0) {
+			Logger::instance().log("pointerPoke_cmd() value is 0, is your pointer chain correct?");
+			return;
+        }
+
 		val += finalJump;
 		poke(val, data.size(), data);
 	}
