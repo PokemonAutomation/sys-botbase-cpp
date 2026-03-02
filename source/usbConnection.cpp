@@ -192,16 +192,17 @@ namespace UsbConnection {
                     while (headerRead < 4 && !m_error) {
                         ssize_t readBytes = usbCommsRead(&header + headerRead, 4 - headerRead);
                         if (readBytes <= 0) {
-                            svcSleepThread(5e+6L);
-                            continue;
+                            break;
                         }
 
                         headerRead += readBytes;
                     }
 
-                    uint32_t dataSize = 0;
-                    std::memcpy(&dataSize, header, 4);
-                    buf.resize(dataSize - 2);
+                    if (headerRead > 2) {
+                        uint32_t dataSize = 0;
+                        std::memcpy(&dataSize, header, 4);
+                        buf.resize(dataSize - 2);
+                    }
                 }
 
                 ssize_t received = usbCommsRead((void*)buf.data(), buf.size());
