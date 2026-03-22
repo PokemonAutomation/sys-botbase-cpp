@@ -38,7 +38,7 @@ namespace CommandHandler {
         Logger::instance().log(log);
 		u64 pid = 0;
 		Result rc = pmdmntGetApplicationProcessId(&pid);
-		if (R_SUCCEEDED(rc) && (m_metaData.pid == 0 || m_metaData.pid != pid)) {
+		if (R_SUCCEEDED(rc)) {
 			m_metaData.pid = pid;
 			initMetaData();
         }
